@@ -1,0 +1,743 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row =>
+                    row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+                );
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Art Mario Game with P Key Respawn</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.2/p5.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #70C5CE;
+            position: relative;
+        }
+        canvas {
+            border: 2px solid black;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        let player;
+        let platforms = [];
+        let enemies = [];
+        let coins = [];
+        let mushrooms = [];
+        let clouds = [];
+        let bullets = [];
+        let gravity = 0.5;
+        let jumpForce = -12;
+        let cameraX = 0;
+        let worldWidth = 1600;
+        let gameOver = false;
+        let coinCount = 0;
+
+        function setup() {
+            createCanvas(800, 600);
+            noSmooth();
+            textFont('Press Start 2P');
+            initializeGame();
+        }
+
+        function initializeGame() {
+            gameOver = false;
+            coinCount = 0;
+            bullets = [];
+            player = new Player();
+            platforms = [
+                new Platform(0, height - 40, worldWidth, 40, 'ground'),
+                new Platform(200, 450, 200, 20, 'brick'),
+                new Platform(500, 350, 200, 20, 'brick'),
+                new Platform(800, 450, 200, 20, 'brick'),
+                new Platform(1100, 350, 200, 20, 'brick')
+            ];
+            enemies = [
+                new Enemy(250, 450 - 16, 200, 400),
+                new Enemy(550, 350 - 16, 500, 700),
+                new Enemy(850, 450 - 16, 800, 1000)
+            ];
+            coins = [
+                new CoinSpin(300, 400),
+                new CoinSpin(600, 300),
+                new CoinSpin(900, 400),
+                new CoinSpin(1200, 300)
+            ];
+            mushrooms = [
+                new Mushroom(500, 350 - 16),
+                new Mushroom(1100, 350 - 16)
+            ];
+            clouds = [
+                new Cloud(100, 100),
+                new Cloud(400, 150),
+                new Cloud(700, 120),
+                new Cloud(1000, 140),
+                new Cloud(1300, 110)
+            ];
+        }
+
+        function draw() {
+            if (gameOver) {
+                background(0);
+                fill(255);
+                textSize(16);
+                textAlign(CENTER);
+                text("Game Over! Press P to Restart", width / 2, height / 2);
+                text("Coins: " + coinCount, width / 2, height / 2 + 30);
+                return;
+            }
+
+            background(112, 197, 235);
+            player.update();
+            player.hasCollidedThisFrame = false;
+
+            cameraX = -player.x + width / 2;
+            if (cameraX > 0) cameraX = 0;
+            if (cameraX < -worldWidth + width) cameraX = -worldWidth + width;
+
+            push();
+            translate(cameraX, 0);
+            for (let cloud of clouds) {
+                cloud.show();
+            }
+            for (let platform of platforms) {
+                platform.show();
+            }
+            for (let enemy of enemies) {
+                enemy.update();
+                enemy.show();
+            }
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].update();
+                bullets[i].show();
+                if (bullets[i].offScreen()) {
+                    bullets.splice(i, 1);
+                    continue;
+                }
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    if (bullets[i].hits(enemies[j])) {
+                        enemies[j].takeDamage();
+                        bullets.splice(i, 1);
+                        if (enemies[j].health <= 0) {
+                            player.bulletCount += 5;
+                            enemies.splice(j, 1);
+                        }
+                        break;
+                    }
+                }
+            }
+            for (let i = coins.length - 1; i >= 0; i--) {
+                coins[i].update();
+                coins[i].show();
+                if (coins[i].checkCollision()) {
+                    coins.splice(i, 1);
+                    coinCount++;
+                }
+            }
+            for (let i = mushrooms.length - 1; i >= 0; i--) {
+                mushrooms[i].show();
+                if (mushrooms[i].checkCollision()) {
+                    mushrooms.splice(i, 1);
+                    player.grow();
+                }
+            }
+            player.show();
+            pop();
+
+            fill(255);
+            textSize(12);
+            textAlign(LEFT);
+            text("Coins: " + coinCount, 10, 20);
+            text("Power: " + (player.isPoweredUp ? "Big" : "Small"), 10, 40);
+            text("Bullets: " + player.bulletCount, 10, 60);
+            if (player.isImmune) {
+                text("Immune: " + (player.immunityTimer / 1000).toFixed(1) + "s", 10, 80);
+            }
+        }
+
+        function keyPressed() {
+            if (key === ' ' && !player.isJumping && !gameOver) {
+                player.jump();
+            }
+            if (key.toLowerCase() === 'p') {
+                initializeGame();
+            }
+            if (key.toLowerCase() === 'z' && !gameOver) {
+                player.shoot();
+            }
+        }
+
+        class Player {
+            constructor() {
+                this.x = 100;
+                this.y = height - 80;
+                this.w = 16;
+                this.h = 32;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 4;
+                this.isPoweredUp = false;
+                this.isImmune = false;
+                this.immunityTimer = 0;
+                this.flashTimer = 0;
+                this.isJumping = false;
+                this.hasCollidedThisFrame = false;
+                this.walkFrame = 0;
+                this.walkTimer = 0;
+                this.facingRight = true;
+                this.animState = 'none';
+                this.animTimer = 0;
+                this.animScale = 1;
+                this.bulletCount = 5;
+            }
+
+            update() {
+                if (keyIsDown(LEFT_ARROW)) {
+                    this.vx = -this.speed;
+                    this.facingRight = false;
+                } else if (keyIsDown(RIGHT_ARROW)) {
+                    this.vx = this.speed;
+                    this.facingRight = true;
+                } else {
+                    this.vx = 0;
+                }
+
+                this.vy += gravity;
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < 0) this.x = 0;
+                if (this.x > worldWidth - this.w) this.x = worldWidth - this.w;
+
+                for (let platform of platforms) {
+                    if (this.x + this.w > platform.x && this.x < platform.x + platform.w) {
+                        if (this.vy > 0 && this.y + this.h > platform.y && this.y + this.h < platform.y + platform.h) {
+                            this.y = platform.y - this.h;
+                            this.vy = 0;
+                            this.isJumping = false;
+                        }
+                        if (this.vy < 0 && this.y < platform.y + platform.h && this.y > platform.y) {
+                            this.y = platform.y + platform.h;
+                            this.vy = 0;
+                        }
+                    }
+                    if (this.y + this.h > platform.y && this.y < platform.y + platform.h) {
+                        if (this.vx > 0 && this.x + this.w > platform.x && this.x < platform.x) {
+                            this.x = platform.x - this.w;
+                            this.vx = 0;
+                        }
+                        if (this.vx < 0 && this.x < platform.x + platform.w && this.x + this.w > platform.x + platform.w) {
+                            this.x = platform.x + platform.w;
+                            this.vx = 0;
+                        }
+                    }
+                }
+
+                if (this.y >= height - this.h - 40) {
+                    this.y = height - this.h - 40;
+                    this.vy = 0;
+                    this.isJumping = false;
+                }
+
+                if (this.vx !== 0 && !this.isJumping && this.animState === 'none') {
+                    this.walkTimer += deltaTime;
+                    if (this.walkTimer > 150) {
+                        this.walkFrame = (this.walkFrame + 1) % 2;
+                        this.walkTimer = 0;
+                    }
+                } else {
+                    this.walkFrame = 0;
+                }
+
+                if (this.animState !== 'none') {
+                    this.animTimer += deltaTime;
+                    if (this.animState === 'grow') {
+                        this.animScale = lerp(1, 1.5, this.animTimer / 500);
+                        if (this.animTimer >= 500) {
+                            this.animState = 'none';
+                            this.animTimer = 0;
+                            this.animScale = 1;
+                        }
+                    } else if (this.animState === 'shrink') {
+                        this.animScale = lerp(1.5, 1, this.animTimer / 500);
+                        if (this.animTimer >= 500) {
+                            this.animState = 'none';
+                            this.animTimer = 0;
+                            this.animScale = 1;
+                            this.isImmune = true;
+                            this.immunityTimer = 2000;
+                            this.flashTimer = 0;
+                        }
+                    }
+                }
+
+                if (this.isImmune && this.animState === 'none') {
+                    this.immunityTimer -= deltaTime;
+                    this.flashTimer += deltaTime;
+                    if (this.immunityTimer <= 0) {
+                        this.isImmune = false;
+                    }
+                }
+
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    if (!this.hasCollidedThisFrame && !this.isImmune && this.animState === 'none' && enemies[i].checkCollision()) {
+                        this.hasCollidedThisFrame = true;
+                        if (enemies[i].defeatedByPlayer()) {
+                            this.bulletCount += 5;
+                            enemies.splice(i, 1);
+                            this.vy = -5;
+                        } else {
+                            if (this.isPoweredUp) {
+                                this.shrink();
+                            } else {
+                                gameOver = true;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            jump() {
+                this.vy = jumpForce;
+                this.isJumping = true;
+                this.walkFrame = 0;
+            }
+
+            shoot() {
+                if (this.bulletCount > 0) {
+                    // Find the nearest enemy to target its y position
+                    let targetY = this.y; // Default to Mario's position if no enemies
+                    let minDist = Infinity;
+                    for (let enemy of enemies) {
+                        let dist = Math.abs(this.x - enemy.x);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            targetY = enemy.y + 8; // Aim for the center of the enemy
+                        }
+                    }
+                    bullets.push(new Bullet(this.x + (this.facingRight ? this.w : 0), targetY, this.facingRight ? 8 : -8, this.isPoweredUp));
+                    this.bulletCount--;
+                }
+            }
+
+            grow() {
+                if (!this.isPoweredUp && this.animState === 'none') {
+                    this.w = 24;
+                    this.h = 48;
+                    this.y -= 16;
+                    this.isPoweredUp = true;
+                    this.animState = 'grow';
+                    this.animTimer = 0;
+                    this.animScale = 1;
+                }
+            }
+
+            shrink() {
+                if (this.animState === 'none') {
+                    this.w = 16;
+                    this.h = 32;
+                    this.y += 16;
+                    this.isPoweredUp = false;
+                    this.animState = 'shrink';
+                    this.animTimer = 0;
+                    this.animScale = 1.5;
+                }
+            }
+
+            show() {
+                if (this.isImmune && this.animState === 'none' && Math.floor(this.flashTimer / 100) % 2 === 0) {
+                    return;
+                }
+                push();
+                translate(this.x + this.w / 2, this.y);
+                scale(this.animScale * (this.facingRight ? 1 : -1), this.animScale);
+                if (this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0) {
+                    fill(255);
+                }
+                if (this.isPoweredUp) {
+                    if (!this.isJumping && this.walkFrame === 1) {
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-12, 0, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-12, 8, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0, 0, 255);
+                        rect(-12, 16, 16, 16);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-12, 32, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-16, 24, 4, 8);
+                        rect(12, 24, 4, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                        rect(-12, 40, 8, 8);
+                        rect(-4, 32, 8, 8);
+                    } else {
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-12, 0, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-12, 8, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0, 0, 255);
+                        rect(-12, 16, 16, 16);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-12, 32, 16, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-16, 24, 4, 8);
+                        rect(12, 24, 4, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                        rect(-12, 40, 8, 8);
+                        rect(-4, 40, 8, 8);
+                    }
+                    fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                    rect(-4, 8, 4, 4);
+                } else {
+                    if (!this.isJumping && this.walkFrame === 1) {
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-8, 0, 8, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-8, 4, 8, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0, 0, 255);
+                        rect(-8, 8, 8, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-8, 16, 8, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-12, 12, 4, 4);
+                        rect(8, 12, 4, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                        rect(-8, 24, 4, 8);
+                        rect(-4, 16, 4, 8);
+                    } else {
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-8, 0, 8, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-8, 4, 8, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0, 0, 255);
+                        rect(-8, 8, 8, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 0, 0);
+                        rect(-8, 16, 8, 8);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 255, 204, 153);
+                        rect(-12, 12, 4, 4);
+                        rect(8, 12, 4, 4);
+                        fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                        rect(-8, 24, 4, 8);
+                        rect(-4, 24, 4, 8);
+                    }
+                    fill(this.animState !== 'none' && Math.floor(this.animTimer / 100) % 2 === 0 ? 255 : 0);
+                    rect(-4, 4, 4, 2);
+                }
+                pop();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, vx, isPoweredUp) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.size = isPoweredUp ? 20 : 16;
+                this.w = this.size;
+                this.h = this.size;
+            }
+
+            update() {
+                this.x += this.vx;
+            }
+
+            offScreen() {
+                return this.x < 0 || this.x > worldWidth;
+            }
+
+            hits(enemy) {
+                return (this.x + this.w > enemy.x &&
+                        this.x < enemy.x + enemy.w &&
+                        this.y + this.h > enemy.y &&
+                        this.y < enemy.y + enemy.h);
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                fill(255, 165, 0);
+                ellipse(this.w / 2, this.h / 2, this.w, this.h);
+                fill(255, 215, 0);
+                ellipse(this.w / 2, this.h / 2, this.w / 2, this.h / 2);
+                stroke(0);
+                strokeWeight(2);
+                noFill();
+                ellipse(this.w / 2, this.h / 2, this.w, this.h);
+                strokeWeight(1);
+                pop();
+            }
+        }
+
+        class Platform {
+            constructor(x, y, w, h, type) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.type = type;
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                if (this.type === 'ground') {
+                    fill(0, 255, 0);
+                    rect(0, 0, this.w, 8);
+                    fill(139, 69, 19);
+                    rect(0, 8, this.w, this.h - 8);
+                    fill(0, 128, 0);
+                    for (let i = 0; i < this.w; i += 16) {
+                        rect(i, 0, 8, 4);
+                    }
+                } else {
+                    fill(205, 133, 63);
+                    rect(0, 0, this.w, this.h);
+                    stroke(139, 69, 19);
+                    strokeWeight(2);
+                    for (let i = 0; i < this.w; i += 16) {
+                        for (let j = 0; j < this.h; j += 16) {
+                            rect(i, j, 16, 16);
+                        }
+                    }
+                    strokeWeight(1);
+                    stroke(0);
+                }
+                pop();
+            }
+        }
+
+        class Enemy {
+            constructor(x, y, minX, maxX) {
+                this.x = x;
+                this.y = y;
+                this.w = 16;
+                this.h = 16;
+                this.vx = -2;
+                this.minX = minX;
+                this.maxX = maxX;
+                this.walkFrame = 0;
+                this.walkTimer = 0;
+                this.health = 3;
+            }
+
+            update() {
+                this.x += this.vx;
+                if (this.x <= this.minX) {
+                    this.x = this.minX;
+                    this.vx = 2;
+                } else if (this.x >= this.maxX - this.w) {
+                    this.x = this.maxX - this.w;
+                    this.vx = -2;
+                }
+
+                this.y += gravity;
+                for (let platform of platforms) {
+                    if (this.x + this.w > platform.x && this.x < platform.x + platform.w &&
+                        this.y + this.h > platform.y && this.y + this.h < platform.y + platform.h) {
+                        this.y = platform.y - this.h;
+                    }
+                }
+
+                this.walkTimer += deltaTime;
+                if (this.walkTimer > 200) {
+                    this.walkFrame = (this.walkFrame + 1) % 2;
+                    this.walkTimer = 0;
+                }
+            }
+
+            takeDamage() {
+                this.health--;
+            }
+
+            checkCollision() {
+                return (player.x + player.w > this.x &&
+                        player.x < this.x + this.w &&
+                        player.y + player.h > this.y &&
+                        player.y < this.y + this.h);
+            }
+
+            defeatedByPlayer() {
+                return player.vy > 0 && player.y + player.h <= this.y + 5;
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                fill(139, 69, 19);
+                rect(2, 4, 12, 8);
+                fill(0);
+                rect(4, 4, 2, 2);
+                rect(10, 4, 2, 2);
+                fill(255);
+                rect(4, 4, 1, 1);
+                rect(10, 4, 1, 1);
+                fill(0);
+                if (this.walkFrame === 0) {
+                    rect(2, 12, 4, 4);
+                    rect(10, 12, 4, 4);
+                } else {
+                    rect(0, 12, 4, 4);
+                    rect(12, 12, 4, 4);
+                }
+                pop();
+            }
+        }
+
+        class CoinSpin {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.w = 16;
+                this.h = 16;
+                this.spinFrame = 0;
+                this.spinTimer = 0;
+            }
+
+            update() {
+                this.spinTimer += deltaTime;
+                if (this.spinTimer > 100) {
+                    this.spinFrame = (this.spinFrame + 1) % 4;
+                    this.spinTimer = 0;
+                }
+            }
+
+            checkCollision() {
+                return (
+                    player.x + player.w > this.x &&
+                    player.x < this.x + this.w &&
+                    player.y + player.h > this.y &&
+                    player.y < this.y + this.h
+                );
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                fill(255, 215, 0);
+                if (this.spinFrame === 0) {
+                    ellipse(this.w / 2, this.h / 2, this.w, this.h);
+                    fill(0);
+                    ellipse(this.w / 2, this.h / 2, 4, 8);
+                } else if (this.spinFrame === 1) {
+                    rect(this.w / 2 - 2, 0, 4, this.h);
+                    fill(0);
+                    rect(this.w / 2 - 1, this.h / 2 - 2, 2, 4);
+                } else if (this.spinFrame === 2) {
+                    rect(this.w / 2 - 1, 0, 2, this.h);
+                } else {
+                    rect(this.w / 2 - 2, 0, 4, this.h);
+                    fill(0);
+                    rect(this.w / 2 - 1, this.h / 2 - 2, 2, 4);
+                }
+                stroke(0);
+                strokeWeight(2);
+                noFill();
+                if (this.spinFrame === 0) {
+                    ellipse(this.w / 2, this.h / 2, this.w, this.h);
+                } else if (this.spinFrame === 1 || this.spinFrame === 3) {
+                    rect(this.w / 2 - 2, 0, 4, this.h);
+                } else {
+                    rect(this.w / 2 - 1, 0, 2, this.h);
+                }
+                strokeWeight(1);
+                pop();
+            }
+        }
+
+        class Mushroom {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.w = 16;
+                this.h = 16;
+            }
+
+            checkCollision() {
+                return (player.x + player.w > this.x &&
+                        player.x < this.x + this.w &&
+                        player.y + player.h > this.y &&
+                        player.y < this.y + this.h);
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                fill(255, 0, 0);
+                rect(0, 0, 16, 8);
+                fill(255);
+                rect(2, 2, 2, 2);
+                rect(6, 2, 2, 2);
+                rect(10, 2, 2, 2);
+                fill(245, 245, 220);
+                rect(4, 8, 8, 8);
+                stroke(0);
+                strokeWeight(2);
+                noFill();
+                rect(0, 0, 16, 16);
+                strokeWeight(1);
+                pop();
+            }
+        }
+
+        class Cloud {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+
+            show() {
+                push();
+                translate(this.x, this.y);
+                fill(255);
+                noStroke();
+                ellipse(0, 0, 60, 40);
+                ellipse(30, 0, 60, 40);
+                ellipse(15, -15, 60, 40);
+                stroke(0);
+                strokeWeight(2);
+                noFill();
+                ellipse(0, 0, 60, 40);
+                ellipse(30, 0, 60, 40);
+                ellipse(15, -15, 60, 40);
+                strokeWeight(1);
+                pop();
+            }
+        }
+    </script>
+</body>
+</html>
